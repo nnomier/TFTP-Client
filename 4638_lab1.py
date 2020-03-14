@@ -21,6 +21,7 @@ class TftpProcessor(object):
         self.filepath=''
         self.downloadedFile=''
         self.lastAck=False
+        self.multipleOf512=False
         #0 state for upload
         #1 state for download
         self.state=0
@@ -136,6 +137,11 @@ class TftpProcessor(object):
         return packet_chunk
 
     def upload_file(self, file_path_on_server):
+        len=os.stat(file_path_on_server).st_size
+        print("lennn",len)
+        if len%512==0:
+            self.multipleOf512=True
+
         self.filepath=file_path_on_server
         packet=self._create_request_packet(self.TftpPacketType.WRQ,file_path_on_server)
         self.packet_buffer.append(packet)
@@ -170,7 +176,9 @@ def socket_connection( original_server_address, client_socket, file_name,process
     while True:
         if processor.has_pending_packets_to_be_sent():
             packet = processor.get_next_output_packet()
-            if packet==-1:
+            if packet==-1 :
+                if(processor.multipleOf512==True):
+                    client_socket.sendto(b'', server_address)
                 print("[CLIENT] DONE!!")
                 break
             elif packet=='ERR':

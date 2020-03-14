@@ -7,18 +7,14 @@ import time
 def sudo_placement():
     print("Get ready for Sudo Placement at Geeksforgeeks")
 
-
 def good_luck():
     print("Good Luck for Test")
-
 
 def work():
     print("Study and work hard")
 
-
 def bedtime():
     print("It is bed time go rest")
-
 
 def geeks():
     print("Shaurya says Geeksforgeeks")
