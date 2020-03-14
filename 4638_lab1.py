@@ -22,14 +22,6 @@ class TftpProcessor(object):
     	pass
 
     def process_udp_packet(self, packet_data, packet_source):
-    	"""
-    	Parse the input packet, execute your logic according to that packet.
-    	packet data is a bytearray, packet source contains the address
-    	information of the sender.
-    	"""
-    	# Add your logic here, after your logic is done,
-    	# add the packet to be sent to self.packet_buffer
-    	# feel free to remove this line
     	print(f"Received a packet from {packet_source}")
     	in_packet, block_number = self._parse_udp_packet(packet_data)
     	out_packet = self._do_some_logic(in_packet, block_number)
@@ -57,12 +49,6 @@ class TftpProcessor(object):
 
 
     def _do_some_logic(self, input_packet, block_number):
-    	"""
-    	hygilo eltype bt3 elpacket received
-    	w b3den hy3ml elpacket elli elmafroud ttba3at
-    	(data aw acknowledge 3ala 7asab elpacket elli wasalet)
-    	w haraga3 elpacket dih b2a
-    	"""
     	if input_packet == self.TftpPacketType.ACK:
     		return self._parse_file( block_number)
     	elif input_packet == self.TftpPacketType.DATA:
@@ -72,14 +58,6 @@ class TftpProcessor(object):
     		pass
 
     def get_next_output_packet(self):
-    	"""
-    	Returns the next packet that needs to be sent.
-    	This function returns a byetarray representing
-    	the next packet to be sent.
-    	For example;
-    	s_socket.send(tftp_processor.get_next_output_packet())
-    	Leave this function as is.
-    	"""
     	return self.packet_buffer.pop(0)
 
     def has_pending_packets_to_be_sent(self):
@@ -90,9 +68,10 @@ class TftpProcessor(object):
     	return len(self.packet_buffer) != 0
 
     def _process_chunk(self,chunk,block_no):
-    	format_str = "!bbh{}s".format(len(chunk))
-    	packet = struct.pack(format_str,0,self.TftpPacketType.DATA.value,block_no,chunk)
-    	return packet
+        format_str = "!bbh{}s".format(len(chunk))
+        packet = struct.pack(format_str,0,self.TftpPacketType.DATA.value,block_no,chunk)
+        print("len",len(packet))
+        return packet
 
     def _create_ack_packet(self, block_no):
     	format_str = "!bbh"
@@ -109,7 +88,7 @@ class TftpProcessor(object):
         chunk_len=512
         print("hello",self.filepath,"s")
         with open(self.filepath,'rb') as file:
-            file.seek( block_no * 512)
+            file.seek( block_no * chunk_len)
             chunk=file.read(chunk_len)
             if not chunk:
                 print("here i am ")
@@ -150,16 +129,27 @@ def do_socket_logic():
 
 def socket_connection( server_address, client_socket, file_name,processor):
     i=1
+    packet = processor.get_next_output_packet()
+    print("packet", packet, "len", len(packet))
+    client_socket.sendto(packet, (server_address, 69))
+    input_packet, input_address = client_socket.recvfrom(516)
+    processor.process_udp_packet(input_packet, input_address)
+
+    print(input_packet)
     while True:
         print("i",i)
         i+=1
         if processor.has_pending_packets_to_be_sent():
             packet = processor.get_next_output_packet()
-            print("packet",packet)
-            client_socket.sendto( packet, (server_address, 69))
+            if packet==-1:
+                print("DONE!!")
+                break
+            print("packet",packet,"len",len(packet))
+            client_socket.sendto( packet, input_address)
             input_packet, input_address = client_socket.recvfrom(516)
+            processor.process_udp_packet(input_packet, input_address)
             print( input_packet)
-            processor.process_udp_packet( input_packet, input_address)
+
         else :
             break
 
