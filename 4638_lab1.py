@@ -56,21 +56,27 @@ class TftpProcessor(object):
             return self.TftpPacketType.ERROR,0
 
     def _validate_input_packet(self, input_type, input_packet):
-        if self.state == 0 and (input_type != self.TftpPacketType.ACK or input_type != self.TftpPacketType.ERROR ):
-            return False
-        elif self.state == 1 and ( input_type != self.TftpPacketType.DATA or input_type != self.TftpPacketType.ERROR):
-            return False
+        if self.state == 0 :
+            if not (input_type == self.TftpPacketType.ACK or input_type == self.TftpPacketType.ERROR ):
+                print("IF CONDITION1")
+                return False
+        elif self.state == 1:
+            if not(input_type  == self.TftpPacketType.DATA or input_type == self.TftpPacketType.ERROR) :
+                print("IF CONDITION2")
+                return False
 
         if input_type == self.TftpPacketType.ACK and len(input_packet) != 4:
+            print("IF CONDITION3")
             return False
         elif input_type == self.TftpPacketType.DATA and len(input_packet) <4:
+            print("IF CONDITION4")
             return False
         return True
 
     def _do_some_logic(self, input_type, block_number, packet):
-        # correct_response = self._validate_input_packet(input_type, packet)
-        # if not correct_response:
-        #     return self._create_err_packet()
+        correct_response = self._validate_input_packet(input_type, packet)
+        if not correct_response:
+            return self.create_err_packet()
         if input_type == self.TftpPacketType.ACK:
             return self._parse_file( block_number)
         elif input_type == self.TftpPacketType.DATA:
@@ -100,7 +106,7 @@ class TftpProcessor(object):
     	packet = struct.pack(format_str,0, self.TftpPacketType.ACK.value, block_no)
     	return packet
 
-    def _create_err_packet(self):
+    def create_err_packet(self):
         format_str="!bbh23sb"
         packet = struct.pack(format_str,0,self.TftpPacketType.ERROR.value,4,'Illegal TFTP operation.'.encode('utf-8'),0)
         return packet
@@ -170,13 +176,30 @@ def socket_connection( original_server_address, client_socket, file_name,process
             elif packet=='ERR':
                 break
             elif processor.lastAck == True:
+                client_socket.sendto(packet, server_address)
                 print("[CLIENT] DOWNLOAD DONE")
                 break
             print("packet",packet,"len",len(packet))
             client_socket.sendto( packet, server_address)
-            input_packet, input_address = client_socket.recvfrom(516)
-            # if input_address !=server_address
-            #     hb3at error packet lel ghalat
+            try:
+                client_socket.settimeout(5.0)
+                input_packet, input_address = client_socket.recvfrom(516)
+            except:
+                client_socket.sendto(packet, server_address)
+                client_socket.settimeout(5.0)
+                input_packet, input_address = client_socket.recvfrom(516)
+
+            maximum_iterations = 5
+            while input_address != server_address and maximum_iterations > 0:
+                client_socket.sendto(processor.create_err_packet(), input_address)
+                client_socket.settimeout(5.0)
+                input_packet, input_address = client_socket.recvfrom(516)
+                maximum_iterations = maximum_iterations - 1
+            if maximum_iterations == 0:
+                print(' Could not complete transaction because of invalid input packets')
+                break
+
+
             processor.process_udp_packet(input_packet, input_address)
             print( input_packet)
 
