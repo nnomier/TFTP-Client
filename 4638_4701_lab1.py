@@ -26,6 +26,7 @@ class TftpProcessor(object):
         #0 state for upload
         #1 state for download
         self.state=0
+        self.previous_packet=0
         pass
 
     def process_udp_packet(self, packet_data, packet_source):
@@ -54,7 +55,7 @@ class TftpProcessor(object):
             print("[CLIENT] [ERROR] [",errorCode,']',errorMsg.decode("utf-8") )
             return self.TftpPacketType.ERROR,0
 
-    def _validate_input_packet(self, input_type, input_packet):
+    def _validate_input_packet(self, input_type, input_packet, block_number):
         if self.state == 0 :
             if not (input_type == self.TftpPacketType.ACK or input_type == self.TftpPacketType.ERROR ):
                 return False
@@ -62,15 +63,19 @@ class TftpProcessor(object):
             if not(input_type  == self.TftpPacketType.DATA or input_type == self.TftpPacketType.ERROR) :
                 return False
 
+        print('Block Number received ', self.previous_packet)
         if input_type == self.TftpPacketType.ACK and len(input_packet) != 4:
             return False
-        elif input_type == self.TftpPacketType.DATA and len(input_packet) <4:
+        if block_number != self.previous_packet:
             return False
+        if input_type == self.TftpPacketType.DATA and len(input_packet) <4:
+            return False
+        self.previous_packet = self.previous_packet + 1
 
         return True
 
     def _do_some_logic(self, input_type, block_number, packet):
-        correct_response = self._validate_input_packet(input_type, packet)
+        correct_response = self._validate_input_packet(input_type, packet, block_number)
         if not correct_response:
             return self.create_err_packet()
         if input_type == self.TftpPacketType.ACK:
@@ -79,7 +84,7 @@ class TftpProcessor(object):
             return self._create_ack_packet( block_number)
         elif input_type == self.TftpPacketType.ERROR:
             return 'ERR'
-        pass
+        
 
     def get_next_output_packet(self):
     	return self.packet_buffer.pop(0)
@@ -210,12 +215,12 @@ def parse_user_input(address, operation, file_name=None):
     client_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     processor = TftpProcessor()
     if operation == "push":
+    	processor.previous_packet = 0 #first acknowledge that will be received should be 0
     	processor.upload_file( file_name )
-    	pass
     elif operation == "pull":
+    	processor.previous_packet = 1 #first data pack that will be received should be 1
     	processor.request_file( file_name )
     	print(f"Attempting to download [{file_name}]...")
-    	pass
     socket_connection( address, client_socket, file_name, processor)
 
 
