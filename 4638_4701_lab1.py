@@ -21,7 +21,8 @@ class TftpProcessor(object):
         self.filepath=''
         self.downloadedFile=''
         self.lastAck=False
-        self.multipleOf512=False
+        self.lastData=False
+        self.emptyDataPacket=False
         #0 state for upload
         #1 state for download
         self.state=0
@@ -37,15 +38,12 @@ class TftpProcessor(object):
 
     def _parse_udp_packet(self,packet_bytes):
         type = struct.unpack('!b',packet_bytes[1:2])[0]
-
-        print( type )
         if type == 3:
             block_number = struct.unpack( '!h', packet_bytes[2:4])[0]
             format_str = "!{}s".format( len(packet_bytes) - 4)
             new_data = struct.unpack(format_str, packet_bytes[4::])[0]
             self._printToFile(block_number,new_data)
             self.received_packets.append(new_data)
-            print( new_data, 'block no ', block_number )
             return self.TftpPacketType.DATA, block_number
         elif type == 4:
             block_number = struct.unpack( '!h', packet_bytes[2:4])[0]
@@ -53,25 +51,22 @@ class TftpProcessor(object):
         elif type == 5:
             errorCode = struct.unpack('!h',packet_bytes[2:4])[0]
             errorMsg = struct.unpack('!{}s'.format(len(packet_bytes)-5),packet_bytes[4:len(packet_bytes)-1])[0]
-            print("[ERROR] [",errorCode,']',errorMsg.decode("utf-8") )
+            print("[CLIENT] [ERROR] [",errorCode,']',errorMsg.decode("utf-8") )
             return self.TftpPacketType.ERROR,0
 
     def _validate_input_packet(self, input_type, input_packet):
         if self.state == 0 :
             if not (input_type == self.TftpPacketType.ACK or input_type == self.TftpPacketType.ERROR ):
-                print("IF CONDITION1")
                 return False
         elif self.state == 1:
             if not(input_type  == self.TftpPacketType.DATA or input_type == self.TftpPacketType.ERROR) :
-                print("IF CONDITION2")
                 return False
 
         if input_type == self.TftpPacketType.ACK and len(input_packet) != 4:
-            print("IF CONDITION3")
             return False
         elif input_type == self.TftpPacketType.DATA and len(input_packet) <4:
-            print("IF CONDITION4")
             return False
+
         return True
 
     def _do_some_logic(self, input_type, block_number, packet):
@@ -99,7 +94,6 @@ class TftpProcessor(object):
     def _process_chunk(self,chunk,block_no):
         format_str = "!bbh{}s".format(len(chunk))
         packet = struct.pack(format_str,0,self.TftpPacketType.DATA.value,block_no,chunk)
-        print("len",len(packet))
         return packet
 
     def _create_ack_packet(self, block_no):
@@ -126,21 +120,23 @@ class TftpProcessor(object):
 
     def _parse_file(self,block_no):
         chunk_len=512
-        print("hello",self.filepath,"s")
         with open(self.filepath,'rb') as file:
             file.seek( block_no * chunk_len)
             chunk=file.read(chunk_len)
-            if not chunk:
-                print("here i am ")
-                return -1
+
+            if not chunk and self.emptyDataPacket==True:
+                chunk=b''
+                self.emptyDataPacket=False
+            elif not chunk:
+                self.lastData=True
+
             packet_chunk=self._process_chunk(chunk, block_no+1)
         return packet_chunk
 
     def upload_file(self, file_path_on_server):
         len=os.stat(file_path_on_server).st_size
-        print("lennn",len)
         if len%512==0:
-            self.multipleOf512=True
+            self.emptyDataPacket=True
 
         self.filepath=file_path_on_server
         packet=self._create_request_packet(self.TftpPacketType.WRQ,file_path_on_server)
@@ -167,27 +163,25 @@ def check_file_name():
 
 def socket_connection( original_server_address, client_socket, file_name,processor):
     packet = processor.get_next_output_packet()
-    print("packet", packet, "len", len(packet))
     client_socket.sendto(packet, (original_server_address, 69))
     input_packet, server_address = client_socket.recvfrom(516)
     processor.process_udp_packet(input_packet, server_address)
-    print(input_packet)
 
     while True:
         if processor.has_pending_packets_to_be_sent():
             packet = processor.get_next_output_packet()
-            if packet==-1 :
-                if(processor.multipleOf512==True):
-                    client_socket.sendto(b'', server_address)
-                print("[CLIENT] DONE!!")
+            if processor.lastData== True :
+                # if(processor.multipleOf512==True):
+                #     emptyPacket= struct.pack('!bbh',0,3,)
+                #     client_socket.sendto(emptyPacket, server_address)
+                print("[CLIENT] Data Uploaded Successfully ")
                 break
             elif packet=='ERR':
                 break
             elif processor.lastAck == True:
                 client_socket.sendto(packet, server_address)
-                print("[CLIENT] DOWNLOAD DONE")
+                print("[CLIENT]  Data Downloaded Successfully")
                 break
-            print("packet",packet,"len",len(packet))
             client_socket.sendto( packet, server_address)
             try:
                 client_socket.settimeout(5.0)
@@ -207,9 +201,7 @@ def socket_connection( original_server_address, client_socket, file_name,process
                 print(' Could not complete transaction because of invalid input packets')
                 break
 
-
             processor.process_udp_packet(input_packet, input_address)
-            print( input_packet)
 
         else :
             break
